@@ -1,0 +1,76 @@
+{
+  "expo": {
+    "name": "UpQuest",
+    "slug": "upquest",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.upquest.app",
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": [],
+        "com.apple.developer.healthkit.background-delivery": true
+      },
+      "infoPlist": {
+        "NSCalendarsUsageDescription": "UpQuest adds your weekly health plan to your calendar.",
+        "NSRemindersUsageDescription": "UpQuest sets reminders to keep you on track.",
+        "NSPhotoLibraryUsageDescription": "UpQuest may save exported files to your device.",
+        "NSHealthShareUsageDescription": "UpQuest reads your steps, sleep, heart rate, and workout data to personalize your AI health plan.",
+        "NSHealthUpdateUsageDescription": "UpQuest logs completed workouts and activity to Apple Health so your progress stays in sync.",
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification",
+          "processing"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0F"
+      },
+      "package": "com.upquest.app",
+      "permissions": [
+        "READ_CALENDAR",
+        "WRITE_CALENDAR",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-calendar",
+      [
+        "expo-document-picker",
+        {
+          "iCloudContainerEnvironment": "Production"
+        }
+      ],
+      [
+        "react-native-health",
+        {
+          "isClinicalDataEnabled": false
+        }
+      ]
+    ],
+    "scheme": "upquest",
+    "extra": {
+      "eas": {
+        "projectId": "2203de8c-881f-4fbf-9855-b842861d0796"
+      }
+    }
+  }
+}
