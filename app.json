@@ -28,8 +28,12 @@
         "UIBackgroundModes": [
           "fetch",
           "remote-notification",
+          "processing",
+          "fetch",
+          "remote-notification",
           "processing"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

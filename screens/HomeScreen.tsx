@@ -201,7 +201,12 @@ export default function HomeScreen() {
                   <Ionicons name="heart" size={18} color="#FF2D55" />
                   <Text style={st.healthTitle}>Apple Health</Text>
                 </View>
-                {healthLoading && <ActivityIndicator size="small" color="#FF2D55" />}
+                <View style={{ flexDirection:'row', alignItems:'center', gap:10 }}>
+                  {healthLoading && <ActivityIndicator size="small" color="#FF2D55" />}
+                  <TouchableOpacity onPress={() => navigation.navigate('HealthSync')} hitSlop={{ top:8, bottom:8, left:8, right:8 }}>
+                    <Text style={{ color:C.primary, fontSize:13, fontWeight:'700' }}>See All →</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
               {health ? (
                 <View style={st.healthGrid}>
@@ -217,7 +222,9 @@ export default function HomeScreen() {
                   )}
                 </View>
               ) : !healthLoading ? (
-                <Text style={{ color:C.muted, fontSize:13 }}>Pull down to sync Apple Health data</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('HealthSync')}>
+                  <Text style={{ color:C.muted, fontSize:13 }}>Pull down to sync · Tap See All for full report</Text>
+                </TouchableOpacity>
               ) : null}
             </View>
           )}

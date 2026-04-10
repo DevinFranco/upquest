@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import * as Notifications    from 'expo-notifications';
 import { Colors } from './constants/theme';
 import { initNotifications } from './utils/notifications';
 import { initHealthKit }     from './utils/health';
@@ -15,6 +16,7 @@ import HomeScreen            from './screens/HomeScreen';
 import ProfileSetupScreen    from './screens/ProfileSetupScreen';
 import PlanChatScreen        from './screens/PlanChatScreen';
 import ScheduleScreen        from './screens/ScheduleScreen';
+import HealthSyncScreen      from './screens/HealthSyncScreen';
 import ProfileScreen         from './screens/ProfileScreen';
 import WeightTrackerScreen   from './screens/WeightTrackerScreen';
 
@@ -23,6 +25,7 @@ export type RootStackParamList = {
   ProfileSetup:  { editing?: boolean };
   PlanChat:      { stats?: any; goals?: any; labs?: any; mode?: 'onboarding' | 'modify'; currentPlan?: any };
   Schedule:      { scheduleId: string };
+  HealthSync:    undefined;
   WeightTracker: undefined;
   Paywall:       { feature?: string };
 };
@@ -60,6 +63,7 @@ function Tabs() {
 export default function App() {
   const [ready,      setReady]      = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
+  const navigationRef = React.useRef<any>(null);
 
   useEffect(() => {
     (async () => {
@@ -71,6 +75,24 @@ export default function App() {
       initHealthKit().catch(() => {});
       setReady(true);
     })();
+
+    // ── Notification deeplink handler ──────────────────────────────────────
+    // Fires when user TAPS a notification while app is backgrounded/closed
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data as any;
+      const nav  = navigationRef.current;
+      if (!nav) return;
+      // Any routine/reminder taps → open the Schedule screen
+      if (data?.type === 'routine' || data?.screen === 'Schedule') {
+        nav.navigate('Schedule', { scheduleId: 'current' });
+      } else if (data?.screen === 'HealthSync') {
+        nav.navigate('HealthSync');
+      } else if (data?.screen === 'MainTabs') {
+        nav.navigate('MainTabs');
+      }
+    });
+
+    return () => sub.remove();
   }, []);
 
   if (!ready) {
@@ -86,6 +108,7 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
         <NavigationContainer
+          ref={navigationRef}
           theme={{ dark: true, colors: { primary: Colors.primary, background: Colors.background, card: Colors.surface, text: Colors.textPrimary, border: Colors.border, notification: Colors.primary } }}
         >
           <Stack.Navigator
@@ -96,6 +119,7 @@ export default function App() {
             <Stack.Screen name="MainTabs"      component={Tabs} />
             <Stack.Screen name="PlanChat"      component={PlanChatScreen}       options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Schedule"      component={ScheduleScreen}       options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="HealthSync"    component={HealthSyncScreen}     options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="WeightTracker" component={WeightTrackerScreen}  options={{ animation: 'slide_from_bottom' }} />
           </Stack.Navigator>
         </NavigationContainer>

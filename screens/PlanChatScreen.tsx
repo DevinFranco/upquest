@@ -10,6 +10,7 @@ import { api } from '../utils/api';
 import { scheduleNotificationsFromPlan } from '../utils/notifications';
 import { addToCalendar } from '../utils/calendar';
 import { onPlanGenerated, onPlanModified } from '../utils/gamification';
+import { getHealthSnapshot, healthSnapshotToText, isHealthAvailable } from '../utils/health';
 import type { RootStackParamList } from '../App';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
@@ -66,7 +67,25 @@ export default function PlanChatScreen() {
   const generate = async () => {
     setGenerating(true);
     try {
-      const res = await api.post('/plan-chat', { messages: msgs.map(m => ({ role: m.role, content: m.content })), stats, goals, labs: labs ?? null, current_plan: currentPlan ?? null, action: mode === 'modify' ? 'modify' : 'generate' });
+      // Grab real Apple Health data to personalize the plan (graceful no-op if not available)
+      let health_data: string | null = null;
+      if (isHealthAvailable()) {
+        try {
+          const snap = await getHealthSnapshot();
+          const txt  = healthSnapshotToText(snap);
+          if (txt) health_data = txt;
+        } catch {}
+      }
+
+      const res = await api.post('/plan-chat', {
+        messages:     msgs.map(m => ({ role: m.role, content: m.content })),
+        stats,
+        goals,
+        labs:         labs ?? null,
+        current_plan: currentPlan ?? null,
+        action:       mode === 'modify' ? 'modify' : 'generate',
+        health_data,
+      });
       const schedule = res.schedule ?? {};
       await AsyncStorage.setItem('upquest_plan', JSON.stringify({ schedule, generated_at: new Date().toISOString() }));
 

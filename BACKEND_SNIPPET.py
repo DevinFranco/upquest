@@ -1,23 +1,34 @@
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKEND CHANGES NEEDED — apply these in your upquest-backend GitHub repo
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# FILE 1: api/index.py
 # ─────────────────────────────────────────────────────────────────────────────
-# PASTE THIS AT THE VERY BOTTOM OF main.py IN GITHUB, THEN COMMIT
-# Also update the "from typing import Optional" line to add: List, Dict, Any
-# And add "from pydantic import BaseModel" after the existing imports if missing
+# Update the PlanChatRequest model and plan_chat endpoint as shown below.
+# Make sure the top of index.py has: from typing import Optional, List, Dict, Any
+#
+# FILE 2: schedule_generator.py
 # ─────────────────────────────────────────────────────────────────────────────
+# Update build_schedule_prompt() to accept and use the health_data argument.
+#
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
-# ── Plan Chat (no auth required) ─────────────────────────────────────────────
+# ── FILE 1: api/index.py changes ──────────────────────────────────────────────
 
 class PlanChatMessage(BaseModel):
     role: str
     content: str
 
 class PlanChatRequest(BaseModel):
-    messages: List[PlanChatMessage] = []
-    stats: Dict[str, Any] = {}
-    goals: List[str] = []
-    action: str = "chat"   # "chat" | "generate" | "modify"
-    current_plan: Any = None
+    messages:     List[PlanChatMessage] = []
+    stats:        Dict[str, Any]        = {}
+    goals:        List[str]             = []
+    action:       str                   = "chat"   # "chat" | "generate" | "modify"
+    current_plan: Any                   = None
+    labs:         Any                   = None
+    health_data:  Optional[str]         = None      # ← NEW: plain-text Apple Health snapshot
 
 
 @app.post("/plan-chat", tags=["Plan"])
@@ -31,6 +42,7 @@ async def plan_chat(payload: PlanChatRequest):
             goals=payload.goals,
             bloodwork=None,
             week_start=week_start,
+            health_data=payload.health_data,   # ← PASS HEALTH DATA
         )
         if payload.action == "modify" and payload.current_plan:
             prompt += (
@@ -54,7 +66,7 @@ async def plan_chat(payload: PlanChatRequest):
         label = "updated" if payload.action == "modify" else "ready"
         return {"message": f"Your plan is {label}!", "schedule": schedule}
 
-    # ── Chat mode ────────────────────────────────────────────────────────────
+    # ── Chat mode (unchanged) ────────────────────────────────────────────────
     system_prompt = (
         "You are an expert AI health coach having a warm, concise conversation "
         "to understand the user's lifestyle so you can build a personalized health plan. "
@@ -74,3 +86,43 @@ async def plan_chat(payload: PlanChatRequest):
         messages=messages_for_grok,
     )
     return {"message": response.choices[0].message.content}
+
+
+# ── FILE 2: schedule_generator.py — update build_schedule_prompt() ────────────
+#
+# Change the function signature and add the health_data block inside the prompt.
+# The section below shows only what changes — keep everything else the same.
+
+def build_schedule_prompt(
+    stats: dict,
+    goals: list,
+    bloodwork: dict | None = None,
+    week_start: str = "",
+    health_data: str | None = None,          # ← ADD THIS PARAMETER
+) -> str:
+
+    # ... (keep your existing stats/goals prompt building) ...
+
+    # ADD THIS BLOCK — insert right before the final JSON instructions:
+    health_section = ""
+    if health_data:
+        health_section = f"""
+
+## Real-Time Apple Health & Apple Watch Data
+The following data was automatically synced from the user's iPhone and Apple Watch
+seconds before this request. Use it to calibrate workout intensity, rest days,
+sleep-based recovery recommendations, and nutrition timing:
+
+{health_data}
+
+Key guidance:
+- If resting HR is elevated (>10 bpm above normal) or HRV is low → prioritize recovery today
+- If sleep < 6 hrs last night → reduce workout intensity, add extra rest
+- If VO2 Max is known → calibrate cardio zones to match their actual fitness level
+- If blood oxygen < 95% → flag this and recommend a doctor consultation
+- Use step count and active calories to gauge baseline daily activity level
+- Adjust weekly workout volume based on workoutsThisWeek (avoid overtraining)
+"""
+
+    # Then append health_section to your prompt string before returning it.
+    # e.g.: return base_prompt + health_section + json_instructions
