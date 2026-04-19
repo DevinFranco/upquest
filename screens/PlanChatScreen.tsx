@@ -21,10 +21,26 @@ interface Msg { id: string; role: 'user' | 'assistant'; content: string; }
 
 const C = { primary: '#7C3AED', surface: '#1A1A24', border: '#2A2A38', textPrimary: '#F0F0FF', textMuted: '#5A5A70', textSecondary: '#9090A8' };
 
-const OPENER: Record<string, string> = {
-  onboarding: "I have your profile. Before I build your Quest, I want to make sure it fits your real life.\n\nHow would you describe your sleep lately — quality, how many hours you get, and whether you wake up feeling rested?",
-  modify:     "I have your current Quest open. What would you like to change?\n\nYou can say things like \"shorten my workouts\", \"add a rest day on Wednesday\", or \"I want to focus more on sleep\".",
-};
+const SIX_HOURS = 6 * 60 * 60 * 1000;
+
+/** Load Apple Health data from the on-launch cache (fast, near-instant). */
+async function loadCachedHealthData(): Promise<string | null> {
+  if (!isHealthAvailable()) return null;
+  try {
+    const cached = await AsyncStorage.getItem(HEALTH_CACHE_KEY);
+    if (!cached) return null;
+    const { text, cachedAt } = JSON.parse(cached);
+    if (text && (Date.now() - cachedAt) < SIX_HOURS) return text;
+    // Cache stale — try a live fetch and refresh
+    const snap = await getHealthSnapshot();
+    const txt  = healthSnapshotToText(snap);
+    if (txt) {
+      await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text: txt, cachedAt: Date.now() }));
+      return txt;
+    }
+  } catch {}
+  return null;
+}
 
 export default function PlanChatScreen() {
   const navigation  = useNavigation<Nav>();
@@ -35,13 +51,34 @@ export default function PlanChatScreen() {
   const [input,       setInput]       = useState('');
   const [loading,     setLoading]     = useState(false);
   const [generating,  setGenerating]  = useState(false);
+  const [healthData,  setHealthData]  = useState<string | null>(null);
+  const [healthReady, setHealthReady] = useState(false);
   // In modify mode the button is available immediately; in onboarding mode unlock after first reply
   const [canGenerate, setCanGenerate] = useState(mode === 'modify');
   const scrollRef = useRef<ScrollView>(null);
 
+  // ── Load health data from cache, then set context-aware opener ──────────────
   useEffect(() => {
-    setMsgs([{ id: '0', role: 'assistant', content: OPENER[mode] ?? OPENER.onboarding }]);
-  }, [mode]);
+    loadCachedHealthData().then(hd => {
+      setHealthData(hd);
+      setHealthReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!healthReady) return; // wait until health check completes
+
+    let opener: string;
+    if (mode === 'modify') {
+      opener = "I have your current Quest open. What would you like to change?\n\nYou can say things like \"shorten my workouts\", \"add a rest day on Wednesday\", or \"I want to focus more on sleep\".";
+    } else if (healthData) {
+      opener = "I've already pulled your Apple Health & Watch data — I can see your sleep patterns, step count, heart rate, HRV, and workout history. I won't ask you about any of that.\n\nWhat I need from you: tell me about your eating habits and what your main health goal is right now.";
+    } else {
+      opener = "I have your profile. Before I build your Quest, I want to make sure it fits your real life.\n\nHow would you describe your sleep lately — quality, how many hours you get, and whether you wake up feeling rested?";
+    }
+
+    setMsgs([{ id: '0', role: 'assistant', content: opener }]);
+  }, [healthReady, mode]);
 
   const scrollDown = () => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
 
@@ -54,7 +91,7 @@ export default function PlanChatScreen() {
     setLoading(true);
     scrollDown();
     try {
-      const res = await api.post('/plan-chat', { messages: updated.map(m => ({ role: m.role, content: m.content })), stats, goals, labs: labs ?? null, current_plan: currentPlan ?? null, action: 'chat' });
+      const res = await api.post('/plan-chat', { messages: updated.map(m => ({ role: m.role, content: m.content })), stats, goals, labs: labs ?? null, current_plan: currentPlan ?? null, action: 'chat', health_data: healthData });
       setMsgs(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: res.message }]);
       if (updated.filter(m => m.role === 'user').length >= 1) setCanGenerate(true);
     } catch (e: any) {
@@ -68,27 +105,16 @@ export default function PlanChatScreen() {
   const generate = async () => {
     setGenerating(true);
     try {
-      // Grab real Apple Health data — prefer the on-launch cache (fast),
-      // fall back to a live fetch if cache is missing or older than 6 hours.
-      let health_data: string | null = null;
-      if (isHealthAvailable()) {
+      // health_data already loaded into state at component mount — reuse it.
+      // If somehow still null (e.g. stale cache), try one more live fetch.
+      let health_data = healthData;
+      if (!health_data && isHealthAvailable()) {
         try {
-          const SIX_HOURS = 6 * 60 * 60 * 1000;
-          const cached = await AsyncStorage.getItem(HEALTH_CACHE_KEY);
-          if (cached) {
-            const { text, cachedAt } = JSON.parse(cached);
-            if (text && (Date.now() - cachedAt) < SIX_HOURS) {
-              health_data = text;
-            }
-          }
-          // Cache miss or stale — fetch live and refresh cache
-          if (!health_data) {
-            const snap = await getHealthSnapshot();
-            const txt  = healthSnapshotToText(snap);
-            if (txt) {
-              health_data = txt;
-              await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text: txt, cachedAt: Date.now() }));
-            }
+          const snap = await getHealthSnapshot();
+          const txt  = healthSnapshotToText(snap);
+          if (txt) {
+            health_data = txt;
+            await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text: txt, cachedAt: Date.now() }));
           }
         } catch {}
       }

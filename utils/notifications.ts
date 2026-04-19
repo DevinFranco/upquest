@@ -171,7 +171,7 @@ export async function scheduleWeeklyCheckInReminder(
   await Notifications.scheduleNotificationAsync({
     content: {
       title: '⚡ Weekly check-in time',
-      body: 'Update your routine for the week ahead — takes 60 seconds.',
+      body: 'Update your routine for the week ahead — takes 5 minutes.',
       sound: true,
       data: { type: 'weekly_checkin', screen: 'WeeklyCheckIn' },
     },
