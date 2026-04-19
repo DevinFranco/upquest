@@ -93,6 +93,7 @@ export async function addToCalendar(
           startDate,
           endDate,
           timeZone:  Intl.DateTimeFormat().resolvedOptions().timeZone,
+          alarms:    [{ relativeOffset: 0 }],   // alert fires at start time
         });
         count++;
       } catch { /* skip malformed time slots */ }

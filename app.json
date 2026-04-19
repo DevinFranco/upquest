@@ -2,7 +2,7 @@
   "expo": {
     "name": "UpQuest",
     "slug": "upquest",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -28,10 +28,10 @@
         "UIBackgroundModes": [
           "fetch",
           "remote-notification",
-          "processing",
-          "fetch",
-          "remote-notification",
           "processing"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.upquest.app.refresh"
         ],
         "ITSAppUsesNonExemptEncryption": false
       }

@@ -22,6 +22,10 @@ try {
   // Module not linked — all functions degrade gracefully
 }
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+export const HEALTH_CACHE_KEY = 'upquest_health_cache';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface HealthSnapshot {

@@ -10,13 +10,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import * as Notifications    from 'expo-notifications';
 import { Colors } from './constants/theme';
-import { initNotifications } from './utils/notifications';
-import { initHealthKit }     from './utils/health';
+import { initNotifications, scheduleWeeklyCheckInReminder } from './utils/notifications';
+import { initHealthKit, getHealthSnapshot, healthSnapshotToText, HEALTH_CACHE_KEY } from './utils/health';
 import HomeScreen            from './screens/HomeScreen';
 import ProfileSetupScreen    from './screens/ProfileSetupScreen';
 import PlanChatScreen        from './screens/PlanChatScreen';
 import ScheduleScreen        from './screens/ScheduleScreen';
 import HealthSyncScreen      from './screens/HealthSyncScreen';
+import WeeklyCheckInScreen   from './screens/WeeklyCheckInScreen';
 import ProfileScreen         from './screens/ProfileScreen';
 import WeightTrackerScreen   from './screens/WeightTrackerScreen';
 
@@ -26,6 +27,7 @@ export type RootStackParamList = {
   PlanChat:      { stats?: any; goals?: any; labs?: any; mode?: 'onboarding' | 'modify'; currentPlan?: any };
   Schedule:      { scheduleId: string };
   HealthSync:    undefined;
+  WeeklyCheckIn: undefined;
   WeightTracker: undefined;
   Paywall:       { feature?: string };
 };
@@ -44,7 +46,7 @@ function Tabs() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         tabBarIcon: ({ color, size, focused }) => {
           const map: Record<string, [string, string]> = {
-            'My Plan':  ['home',          'home-outline'],
+            'My Quest': ['home',          'home-outline'],
             'Progress': ['trending-up',   'trending-up-outline'],
             'Profile':  ['person-circle', 'person-circle-outline'],
           };
@@ -53,7 +55,7 @@ function Tabs() {
         },
       })}
     >
-      <Tab.Screen name="My Plan"  component={HomeScreen} />
+      <Tab.Screen name="My Quest" component={HomeScreen} />
       <Tab.Screen name="Progress" component={WeightTrackerScreen} />
       <Tab.Screen name="Profile"  component={ProfileScreen} />
     </Tab.Navigator>
@@ -71,8 +73,19 @@ export default function App() {
         setHasProfile(!!val);
       });
       // Kick off notifications + HealthKit in background (non-blocking)
-      initNotifications().catch(() => {});
-      initHealthKit().catch(() => {});
+      initNotifications().then(() => {
+        scheduleWeeklyCheckInReminder().catch(() => {});
+      }).catch(() => {});
+      initHealthKit().then(async (granted) => {
+        if (!granted) return;
+        try {
+          const snap = await getHealthSnapshot();
+          const text = healthSnapshotToText(snap);
+          if (text) {
+            await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text, cachedAt: Date.now() }));
+          }
+        } catch {}
+      }).catch(() => {});
       setReady(true);
     })();
 
@@ -87,6 +100,8 @@ export default function App() {
         nav.navigate('Schedule', { scheduleId: 'current' });
       } else if (data?.screen === 'HealthSync') {
         nav.navigate('HealthSync');
+      } else if (data?.type === 'weekly_checkin' || data?.screen === 'WeeklyCheckIn') {
+        nav.navigate('WeeklyCheckIn');
       } else if (data?.screen === 'MainTabs') {
         nav.navigate('MainTabs');
       }
@@ -120,6 +135,7 @@ export default function App() {
             <Stack.Screen name="PlanChat"      component={PlanChatScreen}       options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Schedule"      component={ScheduleScreen}       options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="HealthSync"    component={HealthSyncScreen}     options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="WeeklyCheckIn" component={WeeklyCheckInScreen}  options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="WeightTracker" component={WeightTrackerScreen}  options={{ animation: 'slide_from_bottom' }} />
           </Stack.Navigator>
         </NavigationContainer>

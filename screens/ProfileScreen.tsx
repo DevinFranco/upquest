@@ -19,7 +19,7 @@ export default function ProfileScreen() {
     AsyncStorage.getItem('upquest_profile').then(v => setProfile(v ? JSON.parse(v) : null));
   }, []));
 
-  const reset = () => Alert.alert('Reset App', 'This clears your profile and plan. Are you sure?', [
+  const reset = () => Alert.alert('Reset App', 'This clears your profile and Quest. Are you sure?', [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Reset', style: 'destructive', onPress: async () => {
       await AsyncStorage.multiRemove(['upquest_profile', 'upquest_plan']);

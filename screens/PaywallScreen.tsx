@@ -209,7 +209,7 @@ export default function PaywallScreen() {
           {/* Social proof */}
           <View style={styles.socialProof}>
             <Text style={styles.socialProofText}>
-              "I fixed my low T and cholesterol in 8 weeks using my UpQuest plan." – Beta user
+              "I fixed my low T and cholesterol in 8 weeks using UpQuest." – Beta user
             </Text>
           </View>
 

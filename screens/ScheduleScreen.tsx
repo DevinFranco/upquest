@@ -129,7 +129,7 @@ export default function ScheduleScreen() {
 
   const syncCalendar = async () => {
     if (!plan) return; setSyncing(true);
-    try { await addToCalendar('', '', plan); Alert.alert('📅 Synced!', 'Your plan has been added to your iPhone calendar.'); }
+    try { await addToCalendar('', '', plan); Alert.alert('📅 Synced!', 'Your Quest has been added to your iPhone calendar.'); }
     catch (e: any) { Alert.alert('Calendar Error', e.message ?? 'Could not sync.'); }
     finally { setSyncing(false); }
   };
@@ -137,7 +137,7 @@ export default function ScheduleScreen() {
   const progressData = gamification ? xpProgressInLevel(gamification.xp) : null;
 
   if (loading) return <View style={{ flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'#0A0A0F' }}><ActivityIndicator color="#7C3AED" size="large" /></View>;
-  if (!plan)   return <View style={{ flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'#0A0A0F' }}><Text style={{ color:'#9090A8' }}>No plan found.</Text><TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop:20 }}><Text style={{ color:'#7C3AED' }}>← Go back</Text></TouchableOpacity></View>;
+  if (!plan)   return <View style={{ flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'#0A0A0F' }}><Text style={{ color:'#9090A8' }}>No Quest found.</Text><TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop:20 }}><Text style={{ color:'#7C3AED' }}>← Go back</Text></TouchableOpacity></View>;
 
   const days = plan.days ?? {}, dayName = DAYS[activeDay], day = days[dayName] ?? {};
 
@@ -149,7 +149,7 @@ export default function ScheduleScreen() {
 
         <View style={s.topBar}>
           <TouchableOpacity onPress={() => navigation.goBack()}><Ionicons name="chevron-down" size={26} color="#F0F0FF" /></TouchableOpacity>
-          <Text style={s.topTitle}>Weekly Plan</Text>
+          <Text style={s.topTitle}>Weekly Quest</Text>
           <TouchableOpacity style={s.calBtn} onPress={syncCalendar} disabled={syncing}>
             {syncing ? <ActivityIndicator size="small" color="#7C3AED" /> : <Ionicons name="calendar-outline" size={20} color="#7C3AED" />}
           </TouchableOpacity>

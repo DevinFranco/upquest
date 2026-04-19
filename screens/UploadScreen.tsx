@@ -187,7 +187,7 @@ export default function UploadScreen() {
             {[
               { icon: '📄', title: 'Upload your PDF', desc: 'Any standard bloodwork report from your doctor or lab.' },
               { icon: '🔬', title: 'AI extracts key values', desc: 'Grok reads triglycerides, testosterone, cholesterol, and more.' },
-              { icon: '⚡', title: 'Plan auto-personalizes', desc: 'Your next weekly routine is optimized to your exact lab results.' },
+              { icon: '⚡', title: 'Quest auto-personalizes', desc: 'Your next weekly routine is optimized to your exact lab results.' },
             ].map((step, i) => (
               <View key={i} style={styles.howStep}>
                 <Text style={styles.howIcon}>{step.icon}</Text>

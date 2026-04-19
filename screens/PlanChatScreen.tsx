@@ -10,7 +10,8 @@ import { api } from '../utils/api';
 import { scheduleNotificationsFromPlan } from '../utils/notifications';
 import { addToCalendar } from '../utils/calendar';
 import { onPlanGenerated, onPlanModified } from '../utils/gamification';
-import { getHealthSnapshot, healthSnapshotToText, isHealthAvailable } from '../utils/health';
+import { getHealthSnapshot, healthSnapshotToText, isHealthAvailable, HEALTH_CACHE_KEY } from '../utils/health';
+import { getLifestyleProfile, lifestyleToText } from './WeeklyCheckInScreen';
 import type { RootStackParamList } from '../App';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
@@ -21,8 +22,8 @@ interface Msg { id: string; role: 'user' | 'assistant'; content: string; }
 const C = { primary: '#7C3AED', surface: '#1A1A24', border: '#2A2A38', textPrimary: '#F0F0FF', textMuted: '#5A5A70', textSecondary: '#9090A8' };
 
 const OPENER: Record<string, string> = {
-  onboarding: "I have your profile. Before I build your plan, I want to make sure it fits your real life.\n\nHow would you describe your sleep lately — quality, how many hours you get, and whether you wake up feeling rested?",
-  modify:     "I have your current plan open. What would you like to change?\n\nYou can say things like \"shorten my workouts\", \"add a rest day on Wednesday\", or \"I want to focus more on sleep\".",
+  onboarding: "I have your profile. Before I build your Quest, I want to make sure it fits your real life.\n\nHow would you describe your sleep lately — quality, how many hours you get, and whether you wake up feeling rested?",
+  modify:     "I have your current Quest open. What would you like to change?\n\nYou can say things like \"shorten my workouts\", \"add a rest day on Wednesday\", or \"I want to focus more on sleep\".",
 };
 
 export default function PlanChatScreen() {
@@ -67,15 +68,37 @@ export default function PlanChatScreen() {
   const generate = async () => {
     setGenerating(true);
     try {
-      // Grab real Apple Health data to personalize the plan (graceful no-op if not available)
+      // Grab real Apple Health data — prefer the on-launch cache (fast),
+      // fall back to a live fetch if cache is missing or older than 6 hours.
       let health_data: string | null = null;
       if (isHealthAvailable()) {
         try {
-          const snap = await getHealthSnapshot();
-          const txt  = healthSnapshotToText(snap);
-          if (txt) health_data = txt;
+          const SIX_HOURS = 6 * 60 * 60 * 1000;
+          const cached = await AsyncStorage.getItem(HEALTH_CACHE_KEY);
+          if (cached) {
+            const { text, cachedAt } = JSON.parse(cached);
+            if (text && (Date.now() - cachedAt) < SIX_HOURS) {
+              health_data = text;
+            }
+          }
+          // Cache miss or stale — fetch live and refresh cache
+          if (!health_data) {
+            const snap = await getHealthSnapshot();
+            const txt  = healthSnapshotToText(snap);
+            if (txt) {
+              health_data = txt;
+              await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text: txt, cachedAt: Date.now() }));
+            }
+          }
         } catch {}
       }
+
+      // Grab weekly lifestyle / routine context
+      let routine_data: string | null = null;
+      try {
+        const lifestyle = await getLifestyleProfile();
+        if (lifestyle) routine_data = lifestyleToText(lifestyle);
+      } catch {}
 
       const res = await api.post('/plan-chat', {
         messages:     msgs.map(m => ({ role: m.role, content: m.content })),
@@ -85,6 +108,7 @@ export default function PlanChatScreen() {
         current_plan: currentPlan ?? null,
         action:       mode === 'modify' ? 'modify' : 'generate',
         health_data,
+        routine_data,
       });
       const schedule = res.schedule ?? {};
       await AsyncStorage.setItem('upquest_plan', JSON.stringify({ schedule, generated_at: new Date().toISOString() }));
@@ -93,17 +117,17 @@ export default function PlanChatScreen() {
       if (mode === 'modify') await onPlanModified();
       else await onPlanGenerated();
 
-      // Schedule push notifications from the plan's notification definitions
-      if (schedule.notifications?.length) {
-        try { await scheduleNotificationsFromPlan(schedule.notifications); } catch {}
-      }
+      // Schedule push notifications — AI-defined reminders + every activity time slot
+      try {
+        await scheduleNotificationsFromPlan(schedule.notifications ?? [], schedule);
+      } catch {}
 
       // Auto-sync to calendar (best-effort — prompt happens inside addToCalendar)
       if (schedule.days) {
         try { await addToCalendar('', '', schedule); } catch {}
       }
 
-      setMsgs(prev => [...prev, { id: 'done', role: 'assistant', content: mode === 'modify' ? '✅ Your plan has been updated! Heading back…' : '✅ Your plan is ready! Taking you there now…' }]);
+      setMsgs(prev => [...prev, { id: 'done', role: 'assistant', content: mode === 'modify' ? '✅ Your Quest has been updated! Heading back…' : '✅ Your Quest is ready! Taking you there now…' }]);
       scrollDown();
       setTimeout(() => navigation.replace('MainTabs'), 1600);
     } catch (e: any) {
@@ -122,7 +146,7 @@ export default function PlanChatScreen() {
               <Ionicons name="arrow-back" size={24} color="#F0F0FF" />
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={styles.headerTitle}>{mode === 'modify' ? 'Modify Plan' : 'Build My Plan'}</Text>
+              <Text style={styles.headerTitle}>{mode === 'modify' ? 'Modify Quest' : 'Build My Quest'}</Text>
               <Text style={styles.headerSub}>AI Health Coach</Text>
             </View>
             {canGenerate && (

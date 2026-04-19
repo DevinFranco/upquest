@@ -17,6 +17,7 @@ import {
   initHealthKit, getHealthSnapshot, syncWeightFromHealth,
   isHealthAvailable,
 } from '../utils/health';
+import { getLifestyleProfile } from './WeeklyCheckInScreen';
 import type { RootStackParamList } from '../App';
 
 interface WeightEntry { date: string; weight: number; }
@@ -34,9 +35,10 @@ export default function HomeScreen() {
   const [gamification, setGamification] = useState<any>(null);
   const [health,       setHealth]       = useState<any>(null);
   const [completed,    setCompleted]    = useState<Record<string,boolean>>({});
-  const [loading,      setLoading]      = useState(true);
-  const [refreshing,   setRefreshing]   = useState(false);
-  const [healthLoading,setHealthLoading]= useState(false);
+  const [loading,          setLoading]          = useState(true);
+  const [refreshing,       setRefreshing]       = useState(false);
+  const [healthLoading,    setHealthLoading]    = useState(false);
+  const [checkInDue,       setCheckInDue]       = useState(false);
 
   const load = useCallback(async () => {
     const [p, s, wLog, wGoal, gam, comp] = await Promise.all([
@@ -55,6 +57,16 @@ export default function HomeScreen() {
     setCompleted(comp ? JSON.parse(comp) : {});
     setLoading(false);
     setRefreshing(false);
+
+    // Check if weekly check-in is due (every 7 days)
+    const lifestyle = await getLifestyleProfile();
+    if (lifestyle) {
+      const last = lifestyle.last_checkin_date;
+      const daysSince = last
+        ? (Date.now() - new Date(last).getTime()) / (1000 * 60 * 60 * 24)
+        : 8;
+      setCheckInDue(daysSince >= 7);
+    }
 
     // Health data — attempt in background
     if (isHealthAvailable()) {
@@ -135,6 +147,21 @@ export default function HomeScreen() {
               </View>
             )}
           </View>
+
+          {/* ── Weekly check-in banner ── */}
+          {checkInDue && (
+            <TouchableOpacity
+              style={st.checkInBanner}
+              onPress={() => navigation.navigate('WeeklyCheckIn')}
+              activeOpacity={0.85}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={st.checkInTitle}>📅 Weekly check-in ready</Text>
+                <Text style={st.checkInSub}>Update your schedule — your AI coach adapts your Quest each week.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#A78BFA" />
+            </TouchableOpacity>
+          )}
 
           {/* ── Gamification bar (only when there's a profile) ── */}
           {profile && gamification && (
@@ -246,7 +273,7 @@ export default function HomeScreen() {
             <TouchableOpacity style={st.heroBtnWrap} onPress={() => navigation.navigate('ProfileSetup', {})} activeOpacity={0.85}>
               <LinearGradient colors={['#7C3AED','#4F46E5']} start={{x:0,y:0}} end={{x:1,y:1}} style={st.heroBtn}>
                 <Text style={st.heroBtnEmoji}>⚡</Text>
-                <Text style={st.heroBtnTitle}>Build My Plan with AI</Text>
+                <Text style={st.heroBtnTitle}>Build My Quest with AI</Text>
                 <Text style={st.heroBtnSub}>Chat with AI to get a personalized weekly routine</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -258,7 +285,7 @@ export default function HomeScreen() {
               <TouchableOpacity style={st.heroBtnWrap} onPress={() => navigation.navigate('Schedule', { scheduleId:'local' })} activeOpacity={0.85}>
                 <LinearGradient colors={['#7C3AED','#4F46E5']} start={{x:0,y:0}} end={{x:1,y:1}} style={st.heroBtn}>
                   <Text style={st.heroBtnEmoji}>📋</Text>
-                  <Text style={st.heroBtnTitle}>View My Plan</Text>
+                  <Text style={st.heroBtnTitle}>View My Quest</Text>
                   <Text style={st.heroBtnSub}>
                     Generated {plan.generated_at ? new Date(plan.generated_at).toLocaleDateString() : 'recently'}
                   </Text>
@@ -272,14 +299,14 @@ export default function HomeScreen() {
               >
                 <Ionicons name="chatbubble-ellipses" size={22} color={C.primary} />
                 <View style={{ flex:1 }}>
-                  <Text style={st.modifyTitle}>Modify My Plan with AI</Text>
+                  <Text style={st.modifyTitle}>Modify My Quest with AI</Text>
                   <Text style={st.modifySub}>Chat to adjust workouts, sleep, nutrition & more</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={C.muted} />
               </TouchableOpacity>
 
               <TouchableOpacity style={st.rebuildBtn} onPress={() => navigation.navigate('ProfileSetup', {})}>
-                <Text style={st.rebuildTxt}>⚡  Build a New Plan</Text>
+                <Text style={st.rebuildTxt}>⚡  Build a New Quest</Text>
               </TouchableOpacity>
             </>
           )}
@@ -331,6 +358,9 @@ const st = StyleSheet.create({
   header:       { paddingHorizontal:24, paddingTop:16, paddingBottom:8, flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start' },
   greeting:     { color:'#5A5A70', fontSize:13 },
   appName:      { color:'#F0F0FF', fontSize:28, fontWeight:'900' },
+  checkInBanner: { marginHorizontal:16, marginBottom:12, backgroundColor:'#1A1030', borderWidth:1, borderColor:'#5B21B6', borderRadius:14, padding:14, flexDirection:'row', alignItems:'center', gap:10 },
+  checkInTitle:  { color:'#FFFFFF', fontWeight:'700', fontSize:14, marginBottom:3 },
+  checkInSub:    { color:'#9090A8', fontSize:12, lineHeight:17 },
   streakBadge:  { alignItems:'center', backgroundColor:'#FF6B2215', borderRadius:14, paddingVertical:8, paddingHorizontal:14, borderWidth:1, borderColor:'#FF6B2240' },
   streakEmoji:  { fontSize:20 },
   streakNum:    { color:'#FF6B22', fontWeight:'800', fontSize:20, lineHeight:24 },

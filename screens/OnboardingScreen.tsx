@@ -22,12 +22,13 @@ import { GOALS, GOAL_CATEGORIES } from '../constants/goals';
 import GoalSelector from '../components/GoalSelector';
 import StatInput    from '../components/StatInput';
 import type { RootStackParamList } from '../App';
+import { saveLifestyleProfile, type LifestyleProfile, LIFESTYLE_STORAGE_KEY } from './WeeklyCheckInScreen';
 
 const { width } = Dimensions.get('window');
 
-type Step = 'welcome' | 'auth' | 'stats' | 'goals' | 'done';
+type Step = 'welcome' | 'auth' | 'stats' | 'goals' | 'lifestyle' | 'done';
 
-const STEPS: Step[] = ['welcome', 'auth', 'stats', 'goals', 'done'];
+const STEPS: Step[] = ['welcome', 'auth', 'stats', 'goals', 'lifestyle', 'done'];
 
 interface StatsForm {
   age:            string;
@@ -68,6 +69,14 @@ export default function OnboardingScreen() {
   const [stats, setStats]         = useState<StatsForm>(DEFAULT_STATS);
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [loading, setLoading]     = useState(false);
+  const [lifestyle, setLifestyle] = useState({
+    work_situation:  'full_time',
+    work_days:       ['Monday','Tuesday','Wednesday','Thursday','Friday'] as string[],
+    wake_time:       '7:00 AM',
+    bedtime:         '10:30 PM',
+    commute_minutes: 0,
+    has_dependents:  false,
+  });
 
   const stepIndex = STEPS.indexOf(step);
   const progress  = ((stepIndex) / (STEPS.length - 1)) * 100;
@@ -122,6 +131,13 @@ export default function OnboardingScreen() {
         },
         session?.access_token,
       );
+      // Save lifestyle profile locally
+      const lifestyleProfile: LifestyleProfile = {
+        ...lifestyle,
+        last_checkin_date: null,
+        checkin_history: [],
+      };
+      await saveLifestyleProfile(lifestyleProfile);
       setStep('done');
       setTimeout(() => navigation.replace('MainTabs'), 1200);
     } catch (e: any) {
@@ -336,17 +352,161 @@ export default function OnboardingScreen() {
             />
 
             <TouchableOpacity
-              style={[styles.primaryBtn, (selectedGoals.length === 0 || loading) && styles.btnDisabled]}
-              onPress={saveProfile}
-              disabled={selectedGoals.length === 0 || loading}
+              style={[styles.primaryBtn, selectedGoals.length === 0 && styles.btnDisabled]}
+              onPress={() => setStep('lifestyle')}
+              disabled={selectedGoals.length === 0}
             >
               <Text style={styles.primaryBtnText}>
-                {loading ? 'Building your profile…' : `Build My Plan (${selectedGoals.length} goals) →`}
+                {`Next: Your Schedule (${selectedGoals.length} goals selected) →`}
               </Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
       </LinearGradient>
+    );
+  }
+
+  // ── Lifestyle step ────────────────────────────────────────────────────────
+  if (step === 'lifestyle') {
+    const WORK_OPTIONS = [
+      { key: 'full_time',    label: '💼 Full-time job' },
+      { key: 'part_time',    label: '⏰ Part-time work' },
+      { key: 'student',      label: '🎓 Student' },
+      { key: 'stay_at_home', label: '🏠 Stay-at-home parent' },
+      { key: 'entrepreneur', label: '🚀 Entrepreneur' },
+      { key: 'retired',      label: '🌴 Retired' },
+    ];
+    const WAKE_TIMES = ['5:00 AM','6:00 AM','7:00 AM','8:00 AM','9:00 AM+'];
+    const BEDTIMES   = ['8:30 PM','9:30 PM','10:30 PM','11:30 PM','12:30 AM+'];
+    const COMMUTES   = [
+      { val: 0,  label: 'None / WFH' },
+      { val: 20, label: '< 30 min' },
+      { val: 45, label: '30–60 min' },
+      { val: 90, label: '1 hr+' },
+    ];
+    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const DAY_FULL: Record<string,string> = { Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday' };
+
+    const toggleDay = (short: string) => {
+      const full = DAY_FULL[short];
+      setLifestyle(l => ({
+        ...l,
+        work_days: l.work_days.includes(full)
+          ? l.work_days.filter(d => d !== full)
+          : [...l.work_days, full],
+      }));
+    };
+
+    return (
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+        <LinearGradient colors={['#0A0A0F', '#12121A']} style={styles.flex}>
+          <SafeAreaView style={styles.flex}>
+            {renderProgress()}
+            <ScrollView contentContainerStyle={styles.stepContent}>
+              <Text style={styles.stepTitle}>Your weekly schedule</Text>
+              <Text style={styles.stepSubtitle}>
+                Helps your AI coach plan workouts around your real life — not an imaginary one.
+              </Text>
+
+              <Text style={styles.fieldLabel}>Work / Life Situation</Text>
+              <View style={styles.activityRow}>
+                {WORK_OPTIONS.map(opt => (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.activityChip, lifestyle.work_situation === opt.key && styles.chipActive]}
+                    onPress={() => setLifestyle(l => ({ ...l, work_situation: opt.key }))}
+                  >
+                    <Text style={[styles.chipText, lifestyle.work_situation === opt.key && styles.chipTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Typical Work / School Days</Text>
+              <View style={styles.row}>
+                {DAYS.map(d => (
+                  <TouchableOpacity
+                    key={d}
+                    style={[
+                      styles.chip,
+                      { flex: 1, marginHorizontal: 2, paddingHorizontal: 4 },
+                      lifestyle.work_days.includes(DAY_FULL[d]) && styles.chipActive,
+                    ]}
+                    onPress={() => toggleDay(d)}
+                  >
+                    <Text style={[styles.chipText, lifestyle.work_days.includes(DAY_FULL[d]) && styles.chipTextActive]}>
+                      {d}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Wake Time</Text>
+              <View style={[styles.activityRow, { marginBottom: Spacing.lg }]}>
+                {WAKE_TIMES.map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.activityChip, lifestyle.wake_time === t && styles.chipActive]}
+                    onPress={() => setLifestyle(l => ({ ...l, wake_time: t }))}
+                  >
+                    <Text style={[styles.chipText, lifestyle.wake_time === t && styles.chipTextActive]}>{t}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Bedtime</Text>
+              <View style={[styles.activityRow, { marginBottom: Spacing.lg }]}>
+                {BEDTIMES.map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.activityChip, lifestyle.bedtime === t && styles.chipActive]}
+                    onPress={() => setLifestyle(l => ({ ...l, bedtime: t }))}
+                  >
+                    <Text style={[styles.chipText, lifestyle.bedtime === t && styles.chipTextActive]}>{t}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Daily Commute</Text>
+              <View style={[styles.activityRow, { marginBottom: Spacing.lg }]}>
+                {COMMUTES.map(c => (
+                  <TouchableOpacity
+                    key={c.val}
+                    style={[styles.activityChip, lifestyle.commute_minutes === c.val && styles.chipActive]}
+                    onPress={() => setLifestyle(l => ({ ...l, commute_minutes: c.val }))}
+                  >
+                    <Text style={[styles.chipText, lifestyle.commute_minutes === c.val && styles.chipTextActive]}>{c.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Kids or dependents to care for?</Text>
+              <View style={styles.row}>
+                {[{ v: true, label: '👶 Yes' }, { v: false, label: 'No' }].map(opt => (
+                  <TouchableOpacity
+                    key={String(opt.v)}
+                    style={[styles.chip, { flex: 1, marginHorizontal: 4 }, lifestyle.has_dependents === opt.v && styles.chipActive]}
+                    onPress={() => setLifestyle(l => ({ ...l, has_dependents: opt.v }))}
+                  >
+                    <Text style={[styles.chipText, lifestyle.has_dependents === opt.v && styles.chipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                onPress={saveProfile}
+                disabled={loading}
+              >
+                <Text style={styles.primaryBtnText}>
+                  {loading ? 'Building your profile…' : 'Build My Quest →'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </SafeAreaView>
+        </LinearGradient>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -356,7 +516,7 @@ export default function OnboardingScreen() {
       <SafeAreaView style={[styles.flex, styles.center]}>
         <Text style={{ fontSize: 64 }}>🚀</Text>
         <Text style={styles.stepTitle}>You're all set!</Text>
-        <Text style={styles.stepSubtitle}>Generating your personalized plan…</Text>
+        <Text style={styles.stepSubtitle}>Generating your personalized Quest…</Text>
       </SafeAreaView>
     </LinearGradient>
   );

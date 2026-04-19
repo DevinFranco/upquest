@@ -187,7 +187,7 @@ export default function ProfileSetupScreen() {
         <SafeAreaView style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.content}>
             <Text style={styles.title}>About You</Text>
-            <Text style={styles.sub}>Personalizes your plan — no account needed.</Text>
+            <Text style={styles.sub}>Personalizes your Quest — no account needed.</Text>
 
             <Text style={styles.label}>Biological Sex</Text>
             <View style={styles.row}>
