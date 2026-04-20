@@ -10,7 +10,7 @@ import { api } from '../utils/api';
 import { scheduleNotificationsFromPlan } from '../utils/notifications';
 import { addToCalendar } from '../utils/calendar';
 import { onPlanGenerated, onPlanModified } from '../utils/gamification';
-import { getHealthSnapshot, healthSnapshotToText, isHealthAvailable, HEALTH_CACHE_KEY } from '../utils/health';
+import { initHealthKit, getHealthSnapshot, healthSnapshotToText, isHealthAvailable, HEALTH_CACHE_KEY } from '../utils/health';
 import { getLifestyleProfile, lifestyleToText } from './WeeklyCheckInScreen';
 import type { RootStackParamList } from '../App';
 
@@ -23,15 +23,19 @@ const C = { primary: '#7C3AED', surface: '#1A1A24', border: '#2A2A38', textPrima
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 
-/** Load Apple Health data from the on-launch cache (fast, near-instant). */
+/** Load Apple Health data — uses cache if fresh, otherwise inits HealthKit and fetches live. */
 async function loadCachedHealthData(): Promise<string | null> {
   if (!isHealthAvailable()) return null;
   try {
+    // Check cache first
     const cached = await AsyncStorage.getItem(HEALTH_CACHE_KEY);
-    if (!cached) return null;
-    const { text, cachedAt } = JSON.parse(cached);
-    if (text && (Date.now() - cachedAt) < SIX_HOURS) return text;
-    // Cache stale — try a live fetch and refresh
+    if (cached) {
+      const { text, cachedAt } = JSON.parse(cached);
+      if (text && (Date.now() - cachedAt) < SIX_HOURS) return text;
+    }
+    // No cache or stale — ensure HealthKit is initialised, then fetch live
+    const granted = await initHealthKit();
+    if (!granted) return null;
     const snap = await getHealthSnapshot();
     const txt  = healthSnapshotToText(snap);
     if (txt) {
