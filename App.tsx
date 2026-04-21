@@ -11,7 +11,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications    from 'expo-notifications';
 import { Colors } from './constants/theme';
 import { initNotifications, scheduleWeeklyCheckInReminder } from './utils/notifications';
-import { initHealthKit, getHealthSnapshot, healthSnapshotToText, HEALTH_CACHE_KEY } from './utils/health';
 import HomeScreen            from './screens/HomeScreen';
 import ProfileSetupScreen    from './screens/ProfileSetupScreen';
 import PlanChatScreen        from './screens/PlanChatScreen';
@@ -72,20 +71,15 @@ export default function App() {
       await AsyncStorage.getItem('upquest_profile').then(val => {
         setHasProfile(!!val);
       });
-      // Kick off notifications + HealthKit in background (non-blocking)
+      // Kick off notifications in background (non-blocking)
       initNotifications().then(() => {
         scheduleWeeklyCheckInReminder().catch(() => {});
       }).catch(() => {});
-      initHealthKit().then(async (granted) => {
-        if (!granted) return;
-        try {
-          const snap = await getHealthSnapshot();
-          const text = healthSnapshotToText(snap);
-          if (text) {
-            await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text, cachedAt: Date.now() }));
-          }
-        } catch {}
-      }).catch(() => {});
+      // NOTE: initHealthKit() is intentionally NOT called here.
+      // It is called explicitly during onboarding (ProfileSetupScreen health step)
+      // so the iOS permission dialog appears in the right context with explanation.
+      // For users who already granted permission, the HealthSyncScreen and
+      // PlanChatScreen handle refreshing the cached snapshot on demand.
       setReady(true);
     })();
 
