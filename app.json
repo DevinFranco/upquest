@@ -3,6 +3,7 @@
     "name": "UpQuest",
     "slug": "upquest",
     "version": "1.0.1",
+    "newArchEnabled": false,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
