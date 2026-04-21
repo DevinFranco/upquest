@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import type { RootStackParamList } from '../App';
-import { initHealthKit, getHealthSnapshot, healthSnapshotToText, isHealthAvailable, HEALTH_CACHE_KEY } from '../utils/health';
+import { initHealthKit, getHealthSnapshot, healthSnapshotToText, isHealthAvailable, getHealthInitError, resetHealthInit, HEALTH_CACHE_KEY } from '../utils/health';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ProfileSetup'>;
@@ -57,6 +57,7 @@ export default function ProfileSetupScreen() {
   const [healthConnecting, setHealthConnecting] = useState(false);
   const [healthConnected,  setHealthConnected]  = useState(false);
   const [healthDenied,     setHealthDenied]     = useState(false);
+  const [healthError,      setHealthError]      = useState<string | null>(null);
 
   // Pre-fill fields from any previously saved profile so returning users
   // don't have to re-enter everything when rebuilding or editing their plan.
@@ -188,6 +189,8 @@ export default function ProfileSetupScreen() {
   const connectHealth = async () => {
     setHealthConnecting(true);
     setHealthDenied(false);
+    setHealthError(null);
+    resetHealthInit(); // clear any prior init state so iOS dialog can fire again
     try {
       const granted = await initHealthKit();
       if (granted) {
@@ -201,9 +204,11 @@ export default function ProfileSetupScreen() {
         }).catch(() => {});
       } else {
         setHealthDenied(true);
+        setHealthError(getHealthInitError());
       }
-    } catch {
+    } catch (e: any) {
       setHealthDenied(true);
+      setHealthError(e?.message ?? String(e));
     } finally {
       setHealthConnecting(false);
     }
@@ -354,6 +359,11 @@ export default function ProfileSetupScreen() {
                     Permission was denied. You can enable Apple Health access in{' '}
                     <Text style={{ fontWeight: '700' }}>Settings → Privacy → Health → UpQuest</Text>.
                   </Text>
+                  {healthError && (
+                    <Text style={{ color: '#FF6B6B', fontSize: 11, textAlign: 'center', marginTop: 8, fontFamily: 'monospace' }}>
+                      Debug: {healthError}
+                    </Text>
+                  )}
                 </View>
               )}
 

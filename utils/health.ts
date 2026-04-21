@@ -98,18 +98,32 @@ const WRITE_PERMS = [
   'BodyMass', 'MindfulSession',
 ];
 
-let _initialised = false;
-let _permitted   = false;
+let _initialised  = false;
+let _permitted    = false;
+let _lastInitError: string | null = null;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 export function isHealthAvailable(): boolean {
-  return Platform.OS === 'ios' && !!AppleHealthKit;
+  return Platform.OS === 'ios' && !!AppleHealthKit && typeof AppleHealthKit.initHealthKit === 'function';
+}
+
+/** Returns the raw iOS error string from the last initHealthKit call, or null if it succeeded. */
+export function getHealthInitError(): string | null { return _lastInitError; }
+
+/** Reset init state — call this to re-trigger the iOS permission sheet after denial. */
+export function resetHealthInit(): void {
+  _initialised    = false;
+  _permitted      = false;
+  _lastInitError  = null;
 }
 
 export async function initHealthKit(): Promise<boolean> {
-  if (!isHealthAvailable()) return false;
-  if (_initialised)         return _permitted;
+  if (!isHealthAvailable()) {
+    _lastInitError = 'HealthKit not available on this platform or native module not linked.';
+    return false;
+  }
+  if (_initialised) return _permitted;
 
   return new Promise(resolve => {
     const permissions = {
@@ -119,8 +133,9 @@ export async function initHealthKit(): Promise<boolean> {
       },
     };
     AppleHealthKit.initHealthKit(permissions, (err: any) => {
-      _initialised = true;
-      _permitted   = !err;
+      _initialised    = true;
+      _permitted      = !err;
+      _lastInitError  = err ? (typeof err === 'string' ? err : JSON.stringify(err)) : null;
       resolve(_permitted);
     });
   });
