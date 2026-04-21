@@ -16,7 +16,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  getHealthSnapshot, isHealthAvailable, getHeartRateZones,
+  initHealthKit, getHealthSnapshot, isHealthAvailable, getHeartRateZones,
   type HealthSnapshot,
 } from '../utils/health';
 import type { RootStackParamList } from '../App';
@@ -173,11 +173,12 @@ function zoneColor(zone: number): string {
 export default function HealthSyncScreen() {
   const navigation = useNavigation<Nav>();
 
-  const [snap,       setSnap]       = useState<HealthSnapshot | null>(null);
-  const [profile,    setProfile]    = useState<any>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastSync,   setLastSync]   = useState<string | null>(null);
+  const [snap,            setSnap]            = useState<HealthSnapshot | null>(null);
+  const [profile,         setProfile]         = useState<any>(null);
+  const [loading,         setLoading]         = useState(true);
+  const [refreshing,      setRefreshing]      = useState(false);
+  const [lastSync,        setLastSync]        = useState<string | null>(null);
+  const [permDenied,      setPermDenied]      = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -185,6 +186,14 @@ export default function HealthSyncScreen() {
       setProfile(p ? JSON.parse(p) : null);
 
       if (isHealthAvailable()) {
+        // Always call initHealthKit first — it's idempotent and resolves instantly
+        // if already initialised, but ensures _permitted is set before reading data.
+        const granted = await initHealthKit();
+        if (!granted) {
+          setPermDenied(true);
+          return;
+        }
+        setPermDenied(false);
         const snapshot = await getHealthSnapshot();
         setSnap(snapshot);
         setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -233,6 +242,48 @@ export default function HealthSyncScreen() {
               <Text style={{ color: C.primary, fontWeight: '700' }}>eas build --platform ios</Text>
               {' '}in your terminal to unlock the full experience.
             </Text>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  // ── Permissions denied state ────────────────────────────────────────────────
+
+  if (isHealthAvailable() && permDenied && !loading) {
+    return (
+      <LinearGradient colors={['#0A0A0F', '#12121A']} style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top:12,bottom:12,left:12,right:12 }}>
+              <Ionicons name="arrow-back" size={24} color={C.text} />
+            </TouchableOpacity>
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={styles.headerTitle}>Health Sync</Text>
+            </View>
+            <View style={{ width: 24 }} />
+          </View>
+          <View style={{ flex:1, justifyContent:'center', alignItems:'center', padding:32 }}>
+            <Text style={{ fontSize: 56, marginBottom: 18 }}>🔒</Text>
+            <Text style={{ color: C.text, fontSize: 20, fontWeight: '700', marginBottom: 10, textAlign: 'center' }}>
+              Health Access Needed
+            </Text>
+            <Text style={{ color: C.sub, textAlign: 'center', lineHeight: 22, fontSize: 15, marginBottom: 28 }}>
+              UpQuest needs permission to read your Apple Health data. Please enable it in Settings.
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 }}
+              onPress={() => {
+                // Open iOS Settings → UpQuest → Health
+                const { Linking } = require('react-native');
+                Linking.openURL('app-settings:').catch(() => {});
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Open Settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: 16 }} onPress={() => { setLoading(true); load(); }}>
+              <Text style={{ color: C.primary, fontSize: 14 }}>Try again</Text>
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -477,7 +528,7 @@ export default function HealthSyncScreen() {
 const styles = StyleSheet.create({
   header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
                  paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.text },
+  headerTitle: { textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.text },
   headerSub:   { textAlign: 'center', fontSize: 11, color: C.muted, marginTop: 2 },
   scroll:      { padding: 16, paddingBottom: 48, gap: 14 },
   card:        { backgroundColor: C.card, borderRadius: 16, padding: 16,

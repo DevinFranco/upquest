@@ -65,6 +65,15 @@ export default function ScheduleScreen() {
   const [xpToast,      setXpToast]      = useState<{ amount: number; label: string } | null>(null);
   const [gamification, setGamification] = useState<any>(null);
 
+  // Auto-select today's day of week on mount
+  // DAYS = ['Monday',...,'Sunday'] → Mon=0, Tue=1, ..., Sun=6
+  // new Date().getDay() returns 0=Sun, 1=Mon, ..., 6=Sat
+  useEffect(() => {
+    const jsDay = new Date().getDay(); // 0=Sun
+    const mondayBased = jsDay === 0 ? 6 : jsDay - 1; // Mon=0 … Sun=6
+    setActiveDay(mondayBased);
+  }, []);
+
   useEffect(() => { loadPlan(); loadGamState(); loadCompleted(); }, []);
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => { loadPlan(); loadGamState(); });

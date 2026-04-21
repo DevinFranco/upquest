@@ -108,6 +108,16 @@ export default function PlanChatScreen() {
 
   const generate = async () => {
     setGenerating(true);
+    // Show a chat message immediately so the user knows it's working
+    const waitMsg: Msg = {
+      id: 'wait_' + Date.now(),
+      role: 'assistant',
+      content: mode === 'modify'
+        ? '✏️ Updating your Quest now — this usually takes 15–30 seconds…'
+        : '✨ Building your personalized Quest now — this usually takes 15–30 seconds. Hang tight!',
+    };
+    setMsgs(prev => [...prev, waitMsg]);
+    scrollDown();
     try {
       // health_data already loaded into state at component mount — reuse it.
       // If somehow still null (e.g. stale cache), try one more live fetch.
@@ -172,7 +182,10 @@ export default function PlanChatScreen() {
       <LinearGradient colors={['#0A0A0F', '#12121A']} style={{ flex: 1 }}>
         <SafeAreaView style={{ flex: 1 }}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity
+              onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs')}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
               <Ionicons name="arrow-back" size={24} color="#F0F0FF" />
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center' }}>
