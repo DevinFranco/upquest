@@ -9,11 +9,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import type { RootStackParamList } from '../App';
+import { initHealthKit, getHealthSnapshot, healthSnapshotToText, isHealthAvailable, HEALTH_CACHE_KEY } from '../utils/health';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ProfileSetup'>;
 
-type Step = 'stats' | 'goals' | 'labs';
+type Step = 'stats' | 'goals' | 'labs' | 'health';
 
 const ACTIVITY = [
   { key: 'sedentary',   label: 'Sedentary',   sub: 'Little/no exercise' },
@@ -52,6 +53,10 @@ export default function ProfileSetupScreen() {
   const [goals,       setGoals]      = useState<string[]>([]);
   const [labFiles,     setLabFiles]    = useState<{ name: string; uri: string; size?: number }[]>([]);
   const [labUploading, setLabUploading] = useState(false);
+  // Health step state
+  const [healthConnecting, setHealthConnecting] = useState(false);
+  const [healthConnected,  setHealthConnected]  = useState(false);
+  const [healthDenied,     setHealthDenied]     = useState(false);
 
   // Pre-fill fields from any previously saved profile so returning users
   // don't have to re-enter everything when rebuilding or editing their plan.
@@ -165,14 +170,48 @@ export default function ProfileSetupScreen() {
     setStep('labs');
   };
 
-  const goToChat = async (withLabs = true) => {
+  const saveLabs = async (withLabs = true) => {
     const raw     = await AsyncStorage.getItem('upquest_profile');
     const profile = raw ? JSON.parse(raw) : { stats: { sex, age: parseInt(age), height_inches: parseInt(hFt)*12+parseInt(hIn||'0'), weight_lbs: parseFloat(weight), activity_level: activity }, goals };
-    // Save labs array to profile
     if (withLabs && labFiles.length > 0) {
       profile.labs = labFiles.map(f => ({ fileName: f.name, uri: f.uri, uploadedAt: new Date().toISOString() }));
       await AsyncStorage.setItem('upquest_profile', JSON.stringify(profile));
     }
+    // If on iOS and health not yet connected, go to health step
+    if (!editing && isHealthAvailable()) {
+      setStep('health');
+    } else {
+      goToChat();
+    }
+  };
+
+  const connectHealth = async () => {
+    setHealthConnecting(true);
+    setHealthDenied(false);
+    try {
+      const granted = await initHealthKit();
+      if (granted) {
+        setHealthConnected(true);
+        // Eagerly fetch full historical snapshot in background; cache for PlanChat
+        getHealthSnapshot().then(async snap => {
+          const text = healthSnapshotToText(snap);
+          if (text) {
+            await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text, cachedAt: Date.now() }));
+          }
+        }).catch(() => {});
+      } else {
+        setHealthDenied(true);
+      }
+    } catch {
+      setHealthDenied(true);
+    } finally {
+      setHealthConnecting(false);
+    }
+  };
+
+  const goToChat = async () => {
+    const raw     = await AsyncStorage.getItem('upquest_profile');
+    const profile = raw ? JSON.parse(raw) : { stats: { sex, age: parseInt(age), height_inches: parseInt(hFt)*12+parseInt(hIn||'0'), weight_lbs: parseFloat(weight), activity_level: activity }, goals };
     navigation.replace('PlanChat', {
       stats: profile.stats,
       goals: profile.goals,
@@ -255,6 +294,98 @@ export default function ProfileSetupScreen() {
     </LinearGradient>
   );
 
+  // Health step (iOS only — shown after labs)
+  if (step === 'health') return (
+    <LinearGradient colors={['#0A0A0F', '#12121A']} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <TouchableOpacity onPress={() => setStep('labs')} style={{ marginBottom: 16 }}>
+            <Text style={{ color: C.primary }}>← Back</Text>
+          </TouchableOpacity>
+
+          {/* Icon */}
+          <View style={{ alignItems: 'center', marginBottom: 24 }}>
+            <View style={[styles.labUploadIcon, { width: 80, height: 80, borderRadius: 40, marginBottom: 0 }]}>
+              <Ionicons name="heart" size={40} color="#FF2D55" />
+            </View>
+          </View>
+
+          <Text style={styles.title}>Connect Apple Health</Text>
+          <Text style={styles.sub}>
+            UpQuest reads your historical health data to build a truly personalised Quest — not just guesses.
+          </Text>
+
+          {/* What gets read */}
+          <View style={[styles.benefitsList, { marginBottom: 24 }]}>
+            {[
+              { icon: 'footsteps-outline',     text: 'Daily steps & activity — last 30 days' },
+              { icon: 'bed-outline',            text: 'Sleep duration & quality — last 30 days' },
+              { icon: 'heart-outline',          text: 'Resting heart rate & HRV' },
+              { icon: 'barbell-outline',        text: 'Workout history — last 90 days' },
+              { icon: 'scale-outline',          text: 'Weight & body composition trends' },
+              { icon: 'fitness-outline',        text: 'VO2 Max & blood oxygen' },
+            ].map((b, i) => (
+              <View key={i} style={styles.benefitRow}>
+                <Ionicons name={b.icon as any} size={18} color={C.primary} style={{ marginRight: 10, marginTop: 1 }} />
+                <Text style={{ color: C.textSecondary, fontSize: 14, lineHeight: 20, flex: 1 }}>{b.text}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Text style={{ color: C.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 24, lineHeight: 18 }}>
+            Data stays on your device and is only used to personalise your Quest. UpQuest never stores or sells your health data.
+          </Text>
+
+          {healthConnected ? (
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(52,199,89,0.15)', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20, marginBottom: 20 }}>
+                <Ionicons name="checkmark-circle" size={22} color="#34C759" style={{ marginRight: 8 }} />
+                <Text style={{ color: '#34C759', fontWeight: '700', fontSize: 15 }}>Apple Health connected!</Text>
+              </View>
+              <TouchableOpacity style={styles.btn} onPress={goToChat}>
+                <Text style={styles.btnTxt}>Build My Quest →</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {healthDenied && (
+                <View style={{ backgroundColor: 'rgba(255,59,48,0.12)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+                  <Text style={{ color: '#FF3B30', fontSize: 13, textAlign: 'center', lineHeight: 18 }}>
+                    Permission was denied. You can enable Apple Health access in{' '}
+                    <Text style={{ fontWeight: '700' }}>Settings → Privacy → Health → UpQuest</Text>.
+                  </Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.btn, healthConnecting && { opacity: 0.6 }]}
+                onPress={connectHealth}
+                disabled={healthConnecting}
+              >
+                {healthConnecting ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.btnTxt}>Requesting access…</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.btnTxt}>
+                    {healthDenied ? 'Try Again' : '❤️  Connect Apple Health'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={goToChat} style={{ marginTop: 16 }}>
+                <Text style={{ color: C.textSecondary, textAlign: 'center', fontSize: 14 }}>
+                  Skip — I'll add health data later
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
+  );
+
   // Labs step
   return (
     <LinearGradient colors={['#0A0A0F', '#12121A']} style={{ flex: 1 }}>
@@ -321,15 +452,15 @@ export default function ProfileSetupScreen() {
             ))}
           </View>
 
-          <TouchableOpacity style={[styles.btn, { marginTop: 20 }]} onPress={() => goToChat(true)}>
+          <TouchableOpacity style={[styles.btn, { marginTop: 20 }]} onPress={() => saveLabs(true)}>
             <Text style={styles.btnTxt}>
               {labFiles.length > 0
                 ? `Continue with ${labFiles.length} file${labFiles.length > 1 ? 's' : ''} →`
-                : 'Continue to AI Chat →'}
+                : 'Continue →'}
             </Text>
           </TouchableOpacity>
           {labFiles.length === 0 && (
-            <TouchableOpacity onPress={() => goToChat(false)}>
+            <TouchableOpacity onPress={() => saveLabs(false)}>
               <Text style={{ color: C.primary, textAlign: 'center', marginTop: 16, fontSize: 14 }}>Skip for now</Text>
             </TouchableOpacity>
           )}
