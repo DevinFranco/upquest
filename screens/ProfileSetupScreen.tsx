@@ -195,13 +195,16 @@ export default function ProfileSetupScreen() {
       const granted = await initHealthKit();
       if (granted) {
         setHealthConnected(true);
-        // Eagerly fetch full historical snapshot in background; cache for PlanChat
-        getHealthSnapshot().then(async snap => {
-          const text = healthSnapshotToText(snap);
-          if (text) {
-            await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text, cachedAt: Date.now() }));
-          }
-        }).catch(() => {});
+        // Delay snapshot fetch by 1.5s — gives the iOS permission sheet time to fully
+        // dismiss and the native HealthKit bridge time to settle before we fire queries.
+        setTimeout(() => {
+          getHealthSnapshot().then(async snap => {
+            const text = healthSnapshotToText(snap);
+            if (text) {
+              await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text, cachedAt: Date.now() }));
+            }
+          }).catch(() => {});
+        }, 1500);
       } else {
         setHealthDenied(true);
         setHealthError(getHealthInitError());

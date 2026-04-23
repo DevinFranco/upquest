@@ -346,11 +346,11 @@ async function readWorkouts90d(): Promise<{ count: number; avgMinutes: number | 
   if (!_permitted) return { count: 0, avgMinutes: null };
   return new Promise(resolve => {
     const start = new Date(Date.now() - 90 * 86400000);
-    AppleHealthKit.getSamples?.(
-      { startDate: start.toISOString(), endDate: new Date().toISOString(), type: 'Workout' },
+    AppleHealthKit.getWorkoutSamples?.(
+      { startDate: start.toISOString(), endDate: new Date().toISOString(), limit: 500, ascending: false },
       (e: any, r: any[]) => {
         if (e || !r?.length) { resolve({ count: 0, avgMinutes: null }); return; }
-        const durations = r.map(w => (new Date(w.end).getTime() - new Date(w.start).getTime()) / 60000);
+        const durations = r.map(w => (new Date(w.endDate ?? w.end).getTime() - new Date(w.startDate ?? w.start).getTime()) / 60000);
         const avg = durations.length
           ? +(durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(0)
           : null;
@@ -383,12 +383,13 @@ async function readWeeklyWorkouts(): Promise<{ count: number; avgMinutes: number
   if (!_permitted) return { count: 0, avgMinutes: null, totalCals: null };
   return new Promise(resolve => {
     const start = new Date(Date.now() - 7 * 86400000);
-    AppleHealthKit.getSamples?.(
-      { startDate: start.toISOString(), endDate: new Date().toISOString(), type: 'Workout' },
+    // Use getWorkoutSamples — the correct API for react-native-health v1.x
+    AppleHealthKit.getWorkoutSamples?.(
+      { startDate: start.toISOString(), endDate: new Date().toISOString(), limit: 100, ascending: false },
       (e: any, r: any[]) => {
         if (e || !r?.length) { resolve({ count: 0, avgMinutes: null, totalCals: null }); return; }
-        const durations = r.map(w => (new Date(w.end).getTime() - new Date(w.start).getTime()) / 60000);
-        const cals      = r.reduce((s, w) => s + (w.calories ?? 0), 0);
+        const durations = r.map(w => (new Date(w.endDate ?? w.end).getTime() - new Date(w.startDate ?? w.start).getTime()) / 60000);
+        const cals      = r.reduce((s, w) => s + (w.calories ?? w.energyBurned ?? 0), 0);
         resolve({
           count:      r.length,
           avgMinutes: durations.length ? +(durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(0) : null,
@@ -412,6 +413,11 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
   };
   if (!_permitted) return empty;
 
+  // Wrap every reader so a single native crash can't take down the whole snapshot
+  const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+    try { return await fn(); } catch { return fallback; }
+  };
+
   const [
     steps, cals, exercise,
     rhr, hrv, vo2, spo2,
@@ -419,15 +425,22 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
     sleep, workoutsWeek,
     avgSteps, avgSleep, workoutsAll, weightDelta,
   ] = await Promise.all([
-    readStepsToday(), readActiveCaloriesToday(), readExerciseMinutesToday(),
-    readRestingHR(), readHRV(), readVO2Max(), readBloodOxygen(),
-    readWeight(), readBodyFat(), readBMI(),
-    readSleep(),
-    readWeeklyWorkouts(),
-    readAvgDailySteps30d(),
-    readAvgSleep30d(),
-    readWorkouts90d(),
-    readWeightChange30d(),
+    safe(() => readStepsToday(), null),
+    safe(() => readActiveCaloriesToday(), null),
+    safe(() => readExerciseMinutesToday(), null),
+    safe(() => readRestingHR(), null),
+    safe(() => readHRV(), null),
+    safe(() => readVO2Max(), null),
+    safe(() => readBloodOxygen(), null),
+    safe(() => readWeight(), null),
+    safe(() => readBodyFat(), null),
+    safe(() => readBMI(), null),
+    safe(() => readSleep(), { total: null, deep: null, rem: null, avg7d: null }),
+    safe(() => readWeeklyWorkouts(), { count: 0, avgMinutes: null, totalCals: null }),
+    safe(() => readAvgDailySteps30d(), null),
+    safe(() => readAvgSleep30d(), null),
+    safe(() => readWorkouts90d(), { count: 0, avgMinutes: null }),
+    safe(() => readWeightChange30d(), null),
   ]);
 
   return {
