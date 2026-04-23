@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import type { RootStackParamList } from '../App';
-import { initHealthKit, getHealthSnapshot, healthSnapshotToText, isHealthAvailable, getHealthInitError, resetHealthInit, HEALTH_CACHE_KEY } from '../utils/health';
+import { initHealthKit, isHealthAvailable, getHealthInitError, resetHealthInit } from '../utils/health';
 
 type Nav   = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'ProfileSetup'>;
@@ -195,16 +195,8 @@ export default function ProfileSetupScreen() {
       const granted = await initHealthKit();
       if (granted) {
         setHealthConnected(true);
-        // Delay snapshot fetch by 1.5s — gives the iOS permission sheet time to fully
-        // dismiss and the native HealthKit bridge time to settle before we fire queries.
-        setTimeout(() => {
-          getHealthSnapshot().then(async snap => {
-            const text = healthSnapshotToText(snap);
-            if (text) {
-              await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text, cachedAt: Date.now() }));
-            }
-          }).catch(() => {});
-        }, 1500);
+        // Don't fetch health data here — PlanChatScreen handles it when building the Quest.
+        // Fetching immediately after permission grant causes native bridge crashes.
       } else {
         setHealthDenied(true);
         setHealthError(getHealthInitError());
