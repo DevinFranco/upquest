@@ -247,52 +247,22 @@ async function readSleep(): Promise<{ total: number | null; deep: number | null;
   const none = { total: null, deep: null, rem: null, avg7d: null };
   if (!_permitted) return none;
   return new Promise(resolve => {
-    // 7-day window: lets us find the most recent sleep session even if the
-    // user hasn't slept in the last 48 hours, AND compute a 7-day average.
-    const start = new Date(Date.now() - 7 * 86400000);
+    // 48h window — catches last night reliably without requesting too much data
+    const start = new Date(Date.now() - 48 * 3600000);
     AppleHealthKit.getSleepSamples(
       { startDate: start.toISOString(), endDate: new Date().toISOString() },
       (e: any, r: any[]) => {
         if (e || !r?.length) { resolve(none); return; }
-
-        // Group samples by "morning date" (the date the sleep session ENDED)
-        const nightMap: Record<string, { asleep: number; deep: number; rem: number; inbed: number }> = {};
-        for (const s of r) {
-          const endMs   = new Date(s.endDate).getTime();
-          const startMs = new Date(s.startDate).getTime();
-          const durMs   = endMs - startMs;
-          const key     = new Date(endMs).toISOString().slice(0, 10);
-          if (!nightMap[key]) nightMap[key] = { asleep: 0, deep: 0, rem: 0, inbed: 0 };
-          if (s.value === 'ASLEEP') nightMap[key].asleep += durMs;
-          else if (s.value === 'DEEP')   nightMap[key].deep   += durMs;
-          else if (s.value === 'REM')    nightMap[key].rem    += durMs;
-          else if (s.value === 'INBED')  nightMap[key].inbed  += durMs;
-        }
-
-        const nights = Object.entries(nightMap)
-          .filter(([, v]) => (v.asleep + v.deep + v.rem + v.inbed) > 3600000) // >1h
-          .sort(([a], [b]) => b.localeCompare(a)); // newest first
-
-        // 7-day average sleep
-        const avg7dMs = nights.length
-          ? nights.reduce((s, [, v]) => {
-              const total = v.asleep + v.deep + v.rem;
-              return s + (total > 0 ? total : v.inbed);
-            }, 0) / nights.length
-          : 0;
-
-        if (!nights.length) { resolve(none); return; }
-
-        // Most recent night
-        const [, last] = nights[0];
-        const sleepMs  = last.asleep + last.deep + last.rem;
-        const finalMs  = sleepMs > 0 ? sleepMs : last.inbed;
-
+        const ms = (type: string) => r
+          .filter(s => s.value === type)
+          .reduce((acc, s) => acc + new Date(s.endDate).getTime() - new Date(s.startDate).getTime(), 0);
+        const sleepMs = ms('ASLEEP') + ms('DEEP') + ms('REM');
+        const totalMs = sleepMs > 0 ? sleepMs : ms('INBED');
         resolve({
-          total: finalMs > 0 ? +(finalMs / 3600000).toFixed(1) : null,
-          deep:  last.deep  > 0 ? +(last.deep  / 3600000).toFixed(1) : null,
-          rem:   last.rem   > 0 ? +(last.rem   / 3600000).toFixed(1) : null,
-          avg7d: avg7dMs   > 0 ? +(avg7dMs   / 3600000).toFixed(1) : null,
+          total: totalMs > 0 ? +(totalMs / 3600000).toFixed(1) : null,
+          deep:  ms('DEEP') > 0 ? +(ms('DEEP') / 3600000).toFixed(1) : null,
+          rem:   ms('REM')  > 0 ? +(ms('REM')  / 3600000).toFixed(1) : null,
+          avg7d: null, // re-enable once core reads are stable
         });
       },
     );
@@ -413,35 +383,47 @@ export async function getHealthSnapshot(): Promise<HealthSnapshot> {
   };
   if (!_permitted) return empty;
 
-  // Wrap every reader so a single native crash can't take down the whole snapshot
+  // safe() catches JS errors; batching avoids overwhelming the native bridge
   const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
     try { return await fn(); } catch { return fallback; }
   };
+  const pause = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-  const [
-    steps, cals, exercise,
-    rhr, hrv, vo2, spo2,
-    weight, fat, bmi,
-    sleep, workoutsWeek,
-    avgSteps, avgSleep, workoutsAll, weightDelta,
-  ] = await Promise.all([
+  // Batch 1: today's activity
+  const [steps, cals, exercise] = await Promise.all([
     safe(() => readStepsToday(), null),
     safe(() => readActiveCaloriesToday(), null),
     safe(() => readExerciseMinutesToday(), null),
+  ]);
+  await pause(150);
+
+  // Batch 2: heart metrics
+  const [rhr, hrv, vo2, spo2] = await Promise.all([
     safe(() => readRestingHR(), null),
     safe(() => readHRV(), null),
     safe(() => readVO2Max(), null),
     safe(() => readBloodOxygen(), null),
+  ]);
+  await pause(150);
+
+  // Batch 3: body composition
+  const [weight, fat, bmi] = await Promise.all([
     safe(() => readWeight(), null),
     safe(() => readBodyFat(), null),
     safe(() => readBMI(), null),
-    safe(() => readSleep(), { total: null, deep: null, rem: null, avg7d: null }),
-    safe(() => readWeeklyWorkouts(), { count: 0, avgMinutes: null, totalCals: null }),
-    safe(() => readAvgDailySteps30d(), null),
-    safe(() => readAvgSleep30d(), null),
-    safe(() => readWorkouts90d(), { count: 0, avgMinutes: null }),
-    safe(() => readWeightChange30d(), null),
   ]);
+  await pause(150);
+
+  // Batch 4: sleep + workouts (one at a time to avoid concurrent HealthKit conflicts)
+  const sleep        = await safe(() => readSleep(), { total: null, deep: null, rem: null, avg7d: null });
+  await pause(150);
+  const workoutsWeek = await safe(() => readWeeklyWorkouts(), { count: 0, avgMinutes: null, totalCals: null });
+
+  // Historical reads — deferred until core reads are confirmed stable
+  const avgSteps  = null;
+  const avgSleep  = null;
+  const workoutsAll = { count: 0, avgMinutes: null };
+  const weightDelta = null;
 
   return {
     stepsToday:            steps,
