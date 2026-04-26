@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, InteractionManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,12 +61,18 @@ export default function PlanChatScreen() {
   const [canGenerate, setCanGenerate] = useState(mode === 'modify');
   const scrollRef = useRef<ScrollView>(null);
 
-  // ── Load health data from cache, then set context-aware opener ──────────────
+  // ── Load health data after all navigation animations settle ─────────────────
+  // InteractionManager.runAfterInteractions() waits until the screen transition
+  // is fully complete before firing HealthKit queries. Calling native HealthKit
+  // methods during a navigation animation crashes the old bridge.
   useEffect(() => {
-    loadCachedHealthData().then(hd => {
-      setHealthData(hd);
-      setHealthReady(true);
+    const task = InteractionManager.runAfterInteractions(() => {
+      loadCachedHealthData().then(hd => {
+        setHealthData(hd);
+        setHealthReady(true);
+      });
     });
+    return () => task.cancel();
   }, []);
 
   useEffect(() => {
