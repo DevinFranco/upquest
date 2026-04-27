@@ -10,7 +10,7 @@ import { api } from '../utils/api';
 import { scheduleNotificationsFromPlan } from '../utils/notifications';
 import { addToCalendar } from '../utils/calendar';
 import { onPlanGenerated, onPlanModified } from '../utils/gamification';
-import { initHealthKit, getHealthSnapshot, healthSnapshotToText, isHealthAvailable, HEALTH_CACHE_KEY } from '../utils/health';
+import { isHealthAvailable, HEALTH_CACHE_KEY } from '../utils/health';
 import { getLifestyleProfile, lifestyleToText } from './WeeklyCheckInScreen';
 import type { RootStackParamList } from '../App';
 
@@ -21,26 +21,21 @@ interface Msg { id: string; role: 'user' | 'assistant'; content: string; }
 
 const C = { primary: '#7C3AED', surface: '#1A1A24', border: '#2A2A38', textPrimary: '#F0F0FF', textMuted: '#5A5A70', textSecondary: '#9090A8' };
 
-const SIX_HOURS = 6 * 60 * 60 * 1000;
-
-/** Load Apple Health data — uses cache if fresh, otherwise inits HealthKit and fetches live. */
+/**
+ * Load Apple Health data from cache ONLY.
+ *
+ * PlanChatScreen never calls HealthKit APIs directly — native HealthKit calls
+ * during or immediately after a navigation transition can crash the bridge.
+ * The HealthSyncScreen (user-triggered, settled UI) is responsible for all live
+ * reads and writes the result to HEALTH_CACHE_KEY.  We simply read that cache.
+ */
 async function loadCachedHealthData(): Promise<string | null> {
   if (!isHealthAvailable()) return null;
   try {
-    // Check cache first
     const cached = await AsyncStorage.getItem(HEALTH_CACHE_KEY);
     if (cached) {
-      const { text, cachedAt } = JSON.parse(cached);
-      if (text && (Date.now() - cachedAt) < SIX_HOURS) return text;
-    }
-    // No cache or stale — ensure HealthKit is initialised, then fetch live
-    const granted = await initHealthKit();
-    if (!granted) return null;
-    const snap = await getHealthSnapshot();
-    const txt  = healthSnapshotToText(snap);
-    if (txt) {
-      await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text: txt, cachedAt: Date.now() }));
-      return txt;
+      const { text } = JSON.parse(cached);
+      if (text) return text;
     }
   } catch {}
   return null;
@@ -125,19 +120,9 @@ export default function PlanChatScreen() {
     setMsgs(prev => [...prev, waitMsg]);
     scrollDown();
     try {
-      // health_data already loaded into state at component mount — reuse it.
-      // If somehow still null (e.g. stale cache), try one more live fetch.
-      let health_data = healthData;
-      if (!health_data && isHealthAvailable()) {
-        try {
-          const snap = await getHealthSnapshot();
-          const txt  = healthSnapshotToText(snap);
-          if (txt) {
-            health_data = txt;
-            await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text: txt, cachedAt: Date.now() }));
-          }
-        } catch {}
-      }
+      // health_data was loaded from cache at mount — use it as-is.
+      // Live HealthKit reads only happen in HealthSyncScreen (user-triggered).
+      const health_data = healthData;
 
       // Grab weekly lifestyle / routine context
       let routine_data: string | null = null;

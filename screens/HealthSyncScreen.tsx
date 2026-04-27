@@ -16,7 +16,8 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  initHealthKit, getHealthSnapshot, isHealthAvailable, getHeartRateZones,
+  initHealthKit, getHealthSnapshot, healthSnapshotToText, isHealthAvailable,
+  getHeartRateZones, HEALTH_CACHE_KEY,
   type HealthSnapshot,
 } from '../utils/health';
 import type { RootStackParamList } from '../App';
@@ -196,6 +197,13 @@ export default function HealthSyncScreen() {
         setPermDenied(false);
         const snapshot = await getHealthSnapshot();
         setSnap(snapshot);
+        // Write to cache so PlanChatScreen can read it without making native calls
+        try {
+          const txt = healthSnapshotToText(snapshot);
+          if (txt) {
+            await AsyncStorage.setItem(HEALTH_CACHE_KEY, JSON.stringify({ text: txt, cachedAt: Date.now() }));
+          }
+        } catch {}
         setLastSync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       }
     } catch (e) {
